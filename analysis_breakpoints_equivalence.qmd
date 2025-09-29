@@ -1,0 +1,171 @@
+---
+title: Testing Equivalence between NIRS Breakpoints and Ventilatory Thresholds
+subtitle: Computational Notebook
+author:
+  - name: Philip Skotzke
+    orcid: 0000-0003-4474-4637
+    email: s8phskot@uni-saarland.de
+    affiliation:
+      - name: Institue of Sport and Preventive Medicine, Saarland University, Campus B8.2, 66123 Saarbrücken, Germany
+        city: Saarbrücken
+date: today
+format:
+  html:
+    toc: true
+    toc-location: right-body
+    toc-depth: 3
+    toc-title: Contents
+    embed-resources: true
+    self-contained-math: true
+    code-fold: true
+    other-links: 
+     - text: Github 
+       href: https://github.com/PhilipSkotzke/breakpoints_equivalence
+     - text: OSF
+       href: https://osf.io/u8k2e/
+    theme: lumen
+    number-sections: false
+    #number-depth: 2
+bibliography: text/references/references.bib
+csl: text/references/apa.csl
+tbl-cap-location: top
+---
+
+```{r}
+#| label: SetUp
+#| warning: false
+
+# Set up for the computational notebook
+# -> loading packages
+# -> set the base ggplot2 theme
+# -> define custom colors
+
+library(dplyr)      # efficient data manipulation
+library(ggplot2)    # create plots
+library(ggtext)     # more flexible plot texts
+library(MetBrewer)  # better color palettes
+
+theme_set(
+    theme_bw(base_size = 14) %+replace%
+        theme(
+            plot.title = ggtext::element_markdown(
+                colour = "grey10", size = rel(1.2), hjust = 0, 
+                lineheight = 1.2, margin = margin(b = 7)),
+            plot.title.position = "plot",
+            plot.caption.position = "plot",
+            panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.7),
+            axis.line = element_blank(),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            text = element_text(colour = "grey20"),
+            axis.text = element_text(colour = "grey20"),
+            axis.title.x = element_text(margin = margin(t = 7)),
+            axis.title.y.right = element_text(angle = -90, margin = margin(l = 4)),
+            axis.title = element_text(face = "bold"),
+            legend.margin = margin(c(1, 1, 1, 1)),
+            legend.position = "top",
+            legend.justification = "right",
+            legend.direction = "horizontal",
+            legend.key = element_blank(),
+            legend.key.width = unit(0.7, 'cm'),
+            legend.spacing.y = unit(0.2, 'cm'),
+            strip.background = element_rect(fill = "grey95", colour = "grey10", linewidth = 0.7),
+            strip.text = element_text(
+                size = rel(1), margin = margin(4, 4, 4, 4)),
+            complete = FALSE
+        ))
+
+
+# custom colors
+clrs <- met.brewer("Juarez")
+```
+
+## Preface
+
+This file is the **computational notebook** accompanying the main manuscript and is stored on [Github](https://github.com/PhilipSkotzke/breakpoints_equivalence "Link to GitHub Repository") and accessible on [OSF](https://osf.io/u8k2e/ "Link to OSF project"). It contains the reasoning behind analyses performed, information on data processing, the full details on statistical procedures together with the analytic code. Please note, that:
+
+-   Sub-headers in @sec-manuscript refer to figures and tables generated for the main manuscript. They are stored in their respective folders `/text/figures` and `/text/tables` and not presented here.
+
+-   The code used to produce the results in this document can be viewed by clicking on the `Code` button to unfold it.
+
+::: {.callout-note collapse="true"}
+## This is a reproducible document
+
+This `.html` file is technically reproducible. Download the repository from OSF or GitHub and run the file `analysis_breakpoints_equivalence.qmd`. All file paths are relative to the folder structure, which was adapted from @Figueiredo2022 and simplified.
+:::
+
+## Hypothesis
+
+To be transparent about our reasoning process, we make the distinction between the *research question*, the *research hypothesis*, the *empirical hypothesis* and the *statistical hypothesis*, as described [here](https://publish.obsidian.md/methodology-swi-uds/Practise/Analyzing+research+methodology/1.+Find+the+research+question) and state each separately.
+
+::: callout-important
+This is an exploratory analysis [@Ditroilo2025]. We use existing data to test a hypothesis, but no adequate error control can be ensured. Instead, we provide a sensitivity analysis to estimate the statistical power we achieved with our sample. We believe that this will help other research groups in adequate sample size recruitment for future confirmatory studies.
+:::
+
+### Research Question
+
+Can we use NIRS-measured muscle oxygen saturation (SmO~2~) to delimit the three exercise intensity domains in exercise testing?
+
+### Research Hypothesis
+
+1.  BP1 can be used interchangeably with GET.
+2.  BP2 can be used interchangeably with RCP.
+
+Note, based on the exisintg literature no directional difference would be assumed (e.g. it is as likely that BP2 is at a higher intensity than RCP than the other way around).
+
+### Empirical Hypothesis
+
+1.  The heart rate and speed at BP1 are equivalent to GET derived from a the VAM-EVAL incremental test in highly trained triathletes.
+2.  The heart rate and speed at BP2 are equivalent to RCP derived from a the VAM-EVAL incremental test in highly trained triathletes.
+
+### Statistical Hypothesis
+
+#### BP1 vs GET
+
+$\text{H}_0: \left|\mu_{\text{GET.HR}} - \mu_{\text{BP1.HR}} \right| \geq \Delta_{\text{HR}} ~ \land ~ \left|\mu_{\text{GET.SPEED}} - \mu_{\text{BP1.SPEED}} \right| \geq \Delta_{\text{SPEED}}$
+
+$\text{H}_1: \left|\mu_{\text{GET.HR}} - \mu_{\text{BP1.HR}} \right| < \Delta_{\text{HR}} ~ \land ~ \left|\mu_{\text{GET.SPEED}} - \mu_{\text{BP1.SPEED}} \right| < \Delta_{\text{SPEED}}$
+
+#### BP2 vs RCP
+
+$\text{H}_0: \left|\mu_{\text{RCP.HR}} - \mu_{\text{BP2.HR}} \right| \geq \Delta_{\text{HR}} ~ \land ~ \left|\mu_{\text{RCP.SPEED}} - \mu_{\text{BP2.SPEED}} \right| \geq \Delta_{\text{SPEED}}$
+
+$\text{H}_1: \left|\mu_{\text{RCP.HR}} - \mu_{\text{BP2.HR}} \right| < \Delta_{\text{HR}} ~ \land ~ \left|\mu_{\text{RCP.SPEED}} - \mu_{\text{BP2.SPEED}} \right| < \Delta_{\text{SPEED}}$
+
+Where $\Delta$ denotes the equivalence range.
+
+Based on the existing literature and practical relevance, the following values will be used as smallest effect size of interest (SESOI):
+
+The test-retest reliability for speed at the GET and RCP is typically in the range of 0.2-0.4 km/h [e.g. @Cerezuela-espejo2018; @Dickhuth1999]. Furthermore, a critical difference of 0.5 km/h between lactate thresholds and MLSS has been used before and is justified by its relevance to athletic performance [@Dörr2010]. **Thus, we will use 0.5 km/h as SESOI.**
+
+For heart rate, the typical error of measurement has been reported to be 3.8% for VT1 and 2.5% for VT2 [@Weston2001]. In a different investigation, the standard error of measurement was 3-4 bpm. **Thus, we will use 4 bpm as SESOI.**
+
+Please note, the two hypotheses pairs are formulated as conjunction. In contrast to @Mesquida2025 we use logical connectors instead of set operators.
+
+We argue that the intersection-union approach is the right one for our research question. It would be justified to go a step further and use the "and" connector $\land$ to combine our hypotheses about the first and second threshold because only if we can use SmO~2~ to delineate *all* three intensity domains it would be interchangeable with CPET data. However, if NIRS can be used to establish either threshold, it would be useful.
+
+As a consequence of this, we apply $\alpha$ error correction for multiple comparisons *between* but not within the first and second hypothesis.
+
+For all analysis we use $\alpha$ \< 0.05 for Type I error control, simply because it is common practice in our field.
+
+## Data Analysis
+
+The data used for this analysis was
+
+### Data Preparation
+
+### Descriptive Statistics
+
+### Inferential Statistics
+
+### Sensitivity Analysis
+
+## Content for the manuscript {#sec-manuscript}
+
+## Session Info
+
+```{r}
+sessionInfo()
+```
+
+## References

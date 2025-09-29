@@ -1,0 +1,1 @@
+This folder contains the figures and tables (unformatted) to be included in the manuscript as well as a folder with the supplementary material.

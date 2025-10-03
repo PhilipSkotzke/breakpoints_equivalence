@@ -1,21 +1,19 @@
 # breakpoints_equivalence
 This repository contains the reproducible data analysis workflow to test the equivalence between NIRS breakpoints and ventilatory thresholds.
 
-The file structure is a simplified version of: https://github.com/FellowsFreiesWissen/computational_notebooks.git.
+The file structure is based on the TIER 4.0 protocol (https://www.projecttier.org/tier-protocol/).
 
 ```
 breakpoint_equivalence
   ├── README.md  
-  ├── analysis_bp_quivalence.qmd
-  ├── results 
-  |   ├── README.md
-  |   └── data
-  |       ├── raw
-  |       └── processed
-  └── text
-      ├── README.md
-      ├── figures
-      ├── tables
+  ├── report_bp_quivalence.qmd
+  ├── report_bp_quivalence.html - Computational Notebook
+  ├── data
+  |   ├── input data
+  |   |   └── metadata
+  |   ├── analysis data
+  |   └── references - for the Computational Notebook
+  └── output
+      ├── results
       └── supplementary
- 
 ```

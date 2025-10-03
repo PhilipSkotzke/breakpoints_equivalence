@@ -1,0 +1,645 @@
+---
+title: Testing Equivalence between NIRS Breakpoints and Ventilatory Thresholds
+subtitle: Computational Notebook
+author:
+  - name: Philip Skotzke
+    orcid: 0000-0003-4474-4637
+    email: s8phskot@uni-saarland.de
+    affiliation:
+      - name: Institue of Sport and Preventive Medicine, Saarland University, Campus B8.2, 66123 Saarbrücken, Germany
+        city: Saarbrücken
+date: today
+format:
+  #pdf: default
+  html:
+    toc: true
+    toc-location: right-body
+    toc-depth: 3
+    toc-title: Contents
+    embed-resources: true
+    self-contained-math: true
+    code-fold: true
+    other-links: 
+     - text: Github 
+       href: https://github.com/PhilipSkotzke/breakpoints_equivalence
+     - text: OSF
+       href: https://osf.io/u8k2e/
+    theme: lumen
+    number-sections: false
+    #number-depth: 2
+bibliography: data/references/references.bib
+csl: data/references/apa.csl
+tbl-cap-location: top
+---
+
+```{r}
+#| label: SetUp
+#| warning: false
+
+# Set up for the computational notebook
+# -> loading packages
+# -> set the base ggplot2 theme
+# -> define custom colors
+
+library(dplyr)      # efficient data manipulation
+library(ggdist)     # plot distributions
+library(ggplot2)    # create plots
+library(ggtext)     # more flexible plot texts
+library(gt)         # gt tables
+library(gtsummary)  # summary tables
+library(kableExtra) # create html tables
+library(MetBrewer)  # better color palettes
+library(readxl)     # read MS Excel files
+library(renv)       # save the project environment
+library(stringr)    # manipulate character strings
+library(tidyr)      # data management
+library(TOSTER)     # perform two onesided tests
+
+theme_set(
+    theme_bw(base_size = 14) %+replace%
+        theme(
+            plot.title = ggtext::element_markdown(
+                colour = "grey10", size = rel(1.2), hjust = 0, 
+                lineheight = 1.2, margin = margin(b = 7)),
+            plot.title.position = "plot",
+            plot.caption.position = "plot",
+            panel.border = element_rect(colour = "black",
+                                        fill = NA, linewidth = 0.7),
+            axis.line = element_blank(),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            text = element_text(colour = "grey20"),
+            axis.text = element_text(colour = "grey20"),
+            axis.title.x = element_text(margin = margin(t = 7)),
+            axis.title.y.right = element_text(angle = -90,
+                                              margin = margin(l = 4)),
+            axis.title = element_text(face = "bold"),
+            legend.margin = margin(c(1, 1, 1, 1)),
+            legend.position = "top",
+            legend.justification = "right",
+            legend.direction = "horizontal",
+            legend.key = element_blank(),
+            legend.key.width = unit(0.7, 'cm'),
+            legend.spacing.y = unit(0.2, 'cm'),
+            strip.background = element_rect(fill = "grey95",
+                                            colour = "grey10",
+                                              linewidth = 0.7),
+            strip.text = element_text(
+                size = rel(1), margin = margin(4, 4, 4, 4)),
+            complete = FALSE
+        ))
+
+
+# custom colors
+clrs <- met.brewer("Juarez")
+
+
+# create reproducible envvironments with {renv}
+# run only once, then comment out
+
+# init()
+
+# update renv files
+
+#snapshot()
+```
+
+## Preface
+
+This file is the **computational notebook** accompanying the main manuscript and is stored on [Github](https://github.com/PhilipSkotzke/breakpoints_equivalence "Link to GitHub Repository") and accessible on [OSF](https://osf.io/u8k2e/ "Link to OSF project"). It contains the reasoning behind analyses performed, the full details on statistical procedures and the analytic code. Please note, that:
+
+-   Sub-headers in @sec-manuscript refer to figures and tables generated for the main manuscript or supplements. They are stored in their respective folders `/output/results` and `/output/supplementary` and not presented here.
+
+-   The code used to produce the results in this document can be viewed by clicking on the `Code` button to unfold it.
+
+::: {.callout-tip collapse="true"}
+## This is a reproducible document
+
+This `.html` file is technically reproducible. Download the repository from OSF or GitHub and run the file `analysis_breakpoints_equivalence.qmd`.
+:::
+
+## Hypothesis
+
+To be transparent about our reasoning process, we make the distinction between the *research question*, the *research hypothesis*, the *empirical hypothesis* and the *statistical hypothesis* (for details read [here](https://publish.obsidian.md/methodology-swi-uds/Practise/Analyzing+research+methodology/1.+Find+the+research+question)) and state each separately.
+
+::: callout-note
+This is an exploratory analysis [@Ditroilo2025]. We use existing data to test a hypothesis, but no adequate error control can be ensured. Instead, we use our results to estimate the required sample size to reach sufficient statistical power when comparing NIRS breakpoints with ventilatory thresholds. We believe that this will to inform future research to recruit adequate sample sizes for confirmatory studies.
+:::
+
+### Research Question
+
+Can we use NIRS-measured muscle oxygen saturation (SmO~2~) to delimit the three exercise intensity domains in a field based exercise test?
+
+### Research Hypothesis
+
+1.  BP1 can be used interchangeably with GET.
+2.  BP2 can be used interchangeably with RCP.
+
+Note, based on the existing literature no directional difference would be assumed (e.g. it is as likely that BP2 is at a higher intensity than RCP than the other way around).
+
+### Empirical Hypothesis
+
+1.  The heart rate and speed derived from a the VAM-EVAL incremental test in highly trained triathletes are equivalent between BP1 and GET .
+2.  The heart rate and speed derived from a the VAM-EVAL incremental test in highly trained triathletes are equivalent between BP2 and RCP.
+
+### Statistical Hypothesis
+
+#### BP1 vs GET
+
+$\text{H}_0: \left|\mu_{\text{GET.HR}} - \mu_{\text{BP1.HR}} \right| \geq \Delta_{\text{HR}} ~ \land ~ \left|\mu_{\text{GET.SPEED}} - \mu_{\text{BP1.SPEED}} \right| \geq \Delta_{\text{SPEED}}$
+
+$\text{H}_1: \left|\mu_{\text{GET.HR}} - \mu_{\text{BP1.HR}} \right| < \Delta_{\text{HR}} ~ \land ~ \left|\mu_{\text{GET.SPEED}} - \mu_{\text{BP1.SPEED}} \right| < \Delta_{\text{SPEED}}$
+
+#### BP2 vs RCP
+
+$\text{H}_0: \left|\mu_{\text{RCP.HR}} - \mu_{\text{BP2.HR}} \right| \geq \Delta_{\text{HR}} ~ \land ~ \left|\mu_{\text{RCP.SPEED}} - \mu_{\text{BP2.SPEED}} \right| \geq \Delta_{\text{SPEED}}$
+
+$\text{H}_1: \left|\mu_{\text{RCP.HR}} - \mu_{\text{BP2.HR}} \right| < \Delta_{\text{HR}} ~ \land ~ \left|\mu_{\text{RCP.SPEED}} - \mu_{\text{BP2.SPEED}} \right| < \Delta_{\text{SPEED}}$
+
+Where $\Delta$ denotes the equivalence range.
+
+As indicated by the formulation, the hypothesis can be tested using an equivalence test [@Lakens2017]. Based on the existing literature and practical relevance, the following values will be used as smallest effect size of interest (SESOI):
+
+The test-retest reliability for speed at the GET and RCP is typically in the range of 0.2-0.4 km/h [e.g. @Cerezuela-espejo2018; @Dickhuth1999]. Furthermore, a critical difference of 0.5 km/h between lactate thresholds and MLSS has been used before for criterion validity and is justified by its relevance to athletic performance [@Dörr2010]. **Thus, we will use 0.5 km/h as SESOI.**
+
+For heart rate, the typical error of measurement has been reported to be 3.8% for VT1 and 2.5% for VT2 [@Weston2001], corresponding to 5 and 4 bpm, respectively. In a different investigation, the standard error of measurement was 3-4 bpm. **Thus, we will use 5 bpm as SESOI.**
+
+Please note, the two hypotheses pairs are formulated as conjunction. In contrast to @Mesquida2025 we use logical connectors instead of set operators. We argue that the intersection-union approach is the right one for our research question. It would be justified to go a step further and use the $\land$ ("and") connector to combine our hypotheses about the first and second threshold because only if we can use SmO~2~ to delineate *all* three intensity domains it would be interchangeable with ventilatory thresholds. However, if NIRS can be used to establish either threshold, it would be useful. As a consequence, we don't have to apply $\alpha$ error corrections.
+
+For all analysis we use $\alpha$ \< 0.05 for Type I error control as it is common practice in our field.
+
+## Data Analysis
+
+The data used for this analysis was generated as part of ... See the codebook (`data/input data/metadata`) for more details.
+
+### Data Preparation
+
+The data has been been pre-processed and only needs to be loaded.
+
+```{r}
+
+# load the data
+Study_data <- read_xlsx("data/input data/data_NIRS_BPs_2025.xlsx")
+
+
+```
+
+### Descriptive Statistics
+
+First, we create tables with descriptive statistics.
+
+```{r}
+
+Study_data %>%
+  select(Age, Height, Weight, v_peak, MAS, absVO2max, VO2max) %>%
+  mutate(BMI = Weight / (Height/100)^2) %>%
+    tbl_summary(
+    type = ~ "continuous",
+    statistic = all_continuous() ~ "{mean} \u00B1 {sd} [{min} - {max}]",
+    missing_text = "missing",
+    digits = list(
+      c(Age, Height, Weight, v_peak, MAS, VO2max, BMI) ~ 1,
+      c(absVO2max) ~ 0
+    )
+  ) %>%
+  as_gt() %>%
+  tab_header(title = "Participant Characteristics")
+
+Study_data %>%
+  select(-c(ID, Age, Height, Weight, v_peak, MAS, VO2max, absVO2max)) %>%
+  tbl_summary(
+    type = ~ "continuous",
+    statistic = all_continuous() ~ "{mean} \u00B1 {sd}",
+    missing_text = "not identified",
+    digits = list(
+      c(GET_speed, RCP_speed, BP1_speed, BP2_speed) ~ 1,
+      c(GET_time, GET_HR, RCP_time,
+        RCP_speed, BP1_time, BP1_speed, BP2_time, BP2_speed) ~ 0
+    )
+  ) %>%
+  as_gt() %>%
+  tab_header(title = "Threshold Identification Details")
+  
+```
+
+### Inferential Statistics
+
+To necessary assumptions, the normality of differences is visually checked using qqplots and statistically tested with the Shapiro-Wilk test for heart rate and speed at the first and second threshold.
+
+#### First Threshold (GET vs. BP1)
+
+##### Assumptions - heart rate
+
+```{r}
+
+diff_HR1 <- Study_data$GET_HR - Study_data$BP1_HR 
+
+qqnorm(diff_HR1)
+
+shapiro.test(diff_HR1)
+```
+
+The assumption of normality of the differences is not violated for heart rate.
+
+##### TOST heart rate first threshold
+
+```{r}
+
+EQ1_HR <- t_TOST(
+  x = Study_data$GET_HR,
+  y = Study_data$BP1_HR,
+  hypothesis = "EQU",
+  paired = T,
+  #var.equal = T,
+  eqb = 5,
+  alpha = 0.05
+)
+
+EQ1_HR
+plot(EQ1_HR, "simple", estimates = "raw")
+#plot(EQ1_HR, "tnull")
+```
+
+`r describe(EQ1_HR)`
+
+##### Assumptions speed
+
+```{r}
+
+diff_SP1 <- Study_data$GET_speed - Study_data$BP1_speed 
+
+qqnorm(diff_SP1)
+
+shapiro.test(diff_SP1)
+```
+
+The assumption of normality of the differences is not violated for speed.
+
+##### TOST speed first threshold
+
+```{r}
+
+EQ1_SP <- t_TOST(
+  x = Study_data$GET_speed,
+  y = Study_data$BP1_speed,
+  hypothesis = "EQU",
+  paired = T,
+  #var.equal = T,
+  eqb = 0.5,
+  alpha = 0.05
+)
+
+EQ1_SP
+plot(EQ1_SP, "simple", estimates = "raw")
+#plot(EQ1_SP, "tnull")
+```
+
+#### First Threshold (RCP vs. BP2)
+
+##### Assumptions - heart rate
+
+```{r}
+
+diff_HR2 <- Study_data$RCP_HR - Study_data$BP2_HR 
+
+qqnorm(diff_HR2)
+
+shapiro.test(diff_HR2)
+```
+
+The assumption of normality of the differences is not violated for heart rate.
+
+##### TOST heart rate second threshold
+
+```{r}
+EQ2_HR <- t_TOST(
+  x = Study_data$RCP_HR,
+  y = Study_data$BP2_HR,
+  hypothesis = "EQU",
+  paired = T,
+  #var.equal = T,
+  eqb = 5,
+  alpha = 0.05
+)
+
+EQ2_HR
+plot(EQ2_HR, "simple", estimates = "raw")
+#plot(EQ2_HR, "tnull")
+```
+
+##### Assumptions - speed
+
+```{r}
+
+diff_SP2 <- Study_data$RCP_speed - Study_data$BP2_speed
+
+qqnorm(diff_SP2)
+
+shapiro.test(diff_SP2)
+```
+
+The assumption of normality of the differences is not violated for speed.
+
+##### TOST speed second threshold
+
+```{r}
+
+EQ2_SP <- t_TOST(
+  x = Study_data$RCP_speed,
+  y = Study_data$BP2_speed,
+  hypothesis = "EQU",
+  paired = T,
+  #var.equal = T,
+  eqb = 0.5,
+  alpha = 0.05
+)
+
+EQ2_SP
+plot(EQ2_SP, "simple", estimates = "raw")
+#plot(EQ2_SP, "tnull")
+```
+
+### Power Analysis/Sample Size Estimation
+
+Initially we set out to perform a sensitivity analysis to calculate the statistical power we achieved with our sample. However, as the mean differences are outside our pre-defined equialence range, we cannot calculate our power (it is 0).
+
+What we do instead is to calculate the necessary sample size needed to achieve 80% power with an $\alpha$ of 0.05 and our pre-defined equivalence bounds *if a breakpoint estimation method is used that has a true mean difference of 0 compared to the ventilatory threshold* and the standard deviation of the difference is reasonably well estimated by the standard deviation of our sample.
+
+```{r}
+
+# sample size calculation for true zero difference
+power_EQ1_HR <- power_t_TOST(
+  alpha = 0.05,
+  power = 0.80,
+  delta = 0,
+  sd = EQ1_HR$effsize$SE[[1]]*sqrt(EQ1_HR$smd$ntilde),
+  eqb = 5,
+  type = "paired"
+)
+
+power_EQ2_HR <- power_t_TOST(
+  alpha = 0.05,
+  power = 0.80,
+  delta = 0,
+  sd = EQ2_HR$effsize$SE[[1]]*sqrt(EQ2_HR$smd$ntilde),
+  eqb = 5,
+  type = "paired"
+)
+
+power_EQ1_SP <- power_t_TOST(
+  alpha = 0.05,
+  power = 0.80,
+  delta = 0,
+  sd = EQ1_SP$effsize$SE[[1]]*sqrt(EQ1_SP$smd$ntilde),
+  eqb = 0.5,
+  type = "paired"
+)
+
+power_EQ2_SP <- power_t_TOST(
+  alpha = 0.05,
+  power = 0.80,
+  delta = 0,
+  sd = EQ2_SP$effsize$SE[[1]]*sqrt(EQ2_SP$smd$ntilde),
+  eqb = 0.5,
+  type = "paired"
+)
+
+# sample size calculation for population difference of 2 bpm or 0.2 km/h
+power_EQ1_HR_2 <- power_t_TOST(
+  alpha = 0.05,
+  power = 0.80,
+  delta = 2,
+  sd = EQ1_HR$effsize$SE[[1]]*sqrt(EQ1_HR$smd$ntilde),
+  eqb = 5,
+  type = "paired"
+)
+
+power_EQ2_HR_2 <- power_t_TOST(
+  alpha = 0.05,
+  power = 0.80,
+  delta = 2,
+  sd = EQ2_HR$effsize$SE[[1]]*sqrt(EQ2_HR$smd$ntilde),
+  eqb = 5,
+  type = "paired"
+)
+
+power_EQ1_SP_2 <- power_t_TOST(
+  alpha = 0.05,
+  power = 0.80,
+  delta = 0.2,
+  sd = EQ1_SP$effsize$SE[[1]]*sqrt(EQ1_SP$smd$ntilde),
+  eqb = 0.5,
+  type = "paired"
+)
+
+power_EQ2_SP_2 <- power_t_TOST(
+  alpha = 0.05,
+  power = 0.80,
+  delta = 0.2,
+  sd = EQ2_SP$effsize$SE[[1]]*sqrt(EQ2_SP$smd$ntilde),
+  eqb = 0.5,
+  type = "paired"
+)
+
+
+# create an overview table
+samplsize_overview <- data.frame(
+  c("BP1-GET HR","BP2-RCP HR", "BP1-GET Speed", "BP2-RCP Speed"),
+  c(
+    round(EQ1_HR$effsize$SE[[1]]*sqrt(EQ1_HR$smd$ntilde),2),
+    round(EQ2_HR$effsize$SE[[1]]*sqrt(EQ2_HR$smd$ntilde),2),
+    round(EQ1_SP$effsize$SE[[1]]*sqrt(EQ1_SP$smd$ntilde),2),
+    round(EQ2_SP$effsize$SE[[1]]*sqrt(EQ2_SP$smd$ntilde),2)),
+  c(
+    round(power_EQ1_HR$n,0),
+    round(power_EQ2_HR$n,0),
+    round(power_EQ1_SP$n,0),
+    round(power_EQ2_SP$n,0)
+  ),
+  c(
+    round(power_EQ1_HR_2$n,0),
+    round(power_EQ2_HR_2$n,0),
+    round(power_EQ1_SP_2$n,0),
+    round(power_EQ2_SP_2$n,0)
+  )
+)
+
+samplsize_overview %>%
+  kbl(
+    col.names = c("Comparison", "Sample SD of the difference", "n for 0 difference", "n for small difference")) %>%
+  kable_styling(full_width = FALSE)
+```
+
+Note: The first sample size calculation assumes a true difference between methods of 0. The second calculation assumes a true mean difference of 2 bpm for heart rate or 0.2 km/h for speed. Also, we assumed that our sample standard deviation of the difference approximates the population SD of the difference. This would only be the case for the specific estimation method used in our study, and, due to our sample size of n=11, is a low-precision estimate.
+
+Based on these sample size calculations, we argue that future studies need at least 71 participants to test equivalence of BP2 with RCP an at least 215 participants to test equivalence of BP1 with GET to achieve 80% power *if the new method has the same standard deviation of differences*. If a future method for breakpoint estimation shows less variability (lower standard deviation of differences), lower sample sizes may suffice.
+
+However, **we recommend future studies to specify their expected true difference in advance based on the existing literature.** It is unlikely that the differences is 0, thus resorting to the estimated sample sizes for a true difference of 0 may be perceived as considered practice. As seen in the above table, the required sample sizes are much lower compared to a small difference. This will lead to under-powered studies not able to test the hyptohesis.
+
+## Summary
+
+The four equivalence tests are summarized in the following table:
+
+```{r}
+
+summary <- data.frame(
+  a = c("BP1-GET HR (bpm)","BP1-GET Speed (km/h)", "BP2-RCP HR (bpm)", "BP2-RCP Speed (km/h)"), # comparison
+  b = c(EQ1_HR$TOST[1,4], EQ1_SP$TOST[1,4], EQ2_HR$TOST[1,4],EQ2_SP$TOST[1,4]), # NHST
+  c = c(EQ1_HR$TOST[2,4], EQ1_SP$TOST[2,4], EQ2_HR$TOST[2,4],EQ2_SP$TOST[2,4]), # Equalence test
+  d = c(EQ1_HR$effsize[1,1], EQ1_SP$effsize[1,1], EQ2_HR$effsize[1,1],EQ2_SP$effsize[1,1]), # effect size
+  e = c(EQ1_HR$effsize[1,3], EQ1_SP$effsize[1,3], EQ2_HR$effsize[1,3],EQ2_SP$effsize[1,3]), # CI_lower
+  f = c(EQ1_HR$effsize[1,4], EQ1_SP$effsize[1,4], EQ2_HR$effsize[1,4],EQ2_SP$effsize[1,4]) # CI_upper
+)
+
+summary %>%
+  mutate(
+    across(c(b,c), ~ round(.x,4)),
+    across(c(d,e,f), ~ round(.x,2))
+  ) %>%
+  kbl(col.names = c(
+    "Comparison", "p NHST", "p equivalence test", "difference", "lower CI", "upper CI"
+  )) %>%
+  kable_styling()
+```
+
+Based on our previous stated hypotheses, we conclude:
+
+**Hypothesis BP1-GET**
+
+Both heart rate (p = `r round(EQ1_HR$TOST[2,4],3)`) and speed (p = `r round(EQ1_SP$TOST[2,4],3)`) at the first threshold are not equivalent. Further, the null hypotheses test shows that heart rate and speed are statistically different between BP1 and GET (p = `r round(EQ1_SP$TOST[1,4],3)` and p = `r round(EQ1_HR$TOST[1,4],3)`).
+
+The SmO~2~ BP1 is not only not equivalent to GET, but also statistically different.
+
+**Hypothesis BP2-RCP**
+
+Similarly, both heart rate (p = `r round(EQ2_HR$TOST[2,4],3)`) and speed (p = `r round(EQ2_SP$TOST[2,4],3)`) at the second threshold are not equivalent. Further, the null hypotheses test shows that heart rate and speed are statistically different between BP1 and GET (p = `r round(EQ2_SP$TOST[1,4],4)` and p = `r round(EQ2_HR$TOST[1,4],4)`).
+
+The SmO~2~ BP2 is not only not equivalent to RCP, but also statistically different.
+
+This is visualized by plotting the mean differences and their 90% CIs:
+
+```{r}
+
+summary_data <- rbind(
+  EQ1_HR$eff[1,],
+  EQ1_SP$eff[1,],
+  EQ2_HR$eff[1,],
+  EQ2_SP$eff[1,]
+)
+
+# data for vlines
+vlines <- data.frame(
+  level = c("heart rate","heart rate","speed","speed"),
+  vline_pos = c(-5, 5, -0.5, 0.5)
+)
+
+# create backgroud shading
+shaded_df <- data.frame(
+  level = c("heart rate", "speed"),
+  xmin = c(-5,-0.5),
+  xmax = c(5,0.5),
+  ymin = -Inf,
+  ymax = Inf
+)
+
+# x axis limits
+xlimits <- data.frame(
+  level = c("heart rate", "speed"),
+  x_min = c(-16, -3),
+  x_max = c(16, 3)
+) %>%
+  pivot_longer(cols = c(x_min, x_max),
+               names_to = "limit_type",
+               values_to = "x") 
+
+summary_data %>%
+  mutate(
+    level = c("heart rate","speed","heart rate","speed"),
+    test = c("BP1-GET","BP1-GET", "BP2-RCP", "BP2-RCP")
+  ) %>%
+  ggplot(aes(estimate, test)) +
+  geom_vline(data = vlines, aes(xintercept = vline_pos), linetype = 2) +
+  geom_rect(data= shaded_df, aes (xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax), fill = "grey90", inherit.aes = FALSE) +
+  geom_blank(data = xlimits, aes(x = x), inherit.aes = FALSE) +
+  geom_point() +
+  geom_linerange(aes(xmin = lower.ci, xmax = upper.ci)) +
+  facet_wrap(~level, scales = "free") +
+  labs(
+    x = NULL,
+    y = NULL,
+    caption = "grey areas present the equivalence range"
+  )
+```
+
+```{r}
+# data for vlines
+vlines <- data.frame(
+  Measure = c("heart rate","heart rate","speed","speed"),
+  vline_pos = c(-5, 5, -0.5, 0.5)
+)
+
+# create backgroud shading
+shaded_df <- data.frame(
+  Measure = c("heart rate", "speed"),
+  xmin = c(-5,-0.5),
+  xmax = c(5,0.5),
+  ymin = -Inf,
+  ymax = Inf
+)
+
+# x axis limits
+xlimits <- data.frame(
+  Measure = c("heart rate", "speed"),
+  x_min = c(-16, -3),
+  x_max = c(16, 3)
+) %>%
+  pivot_longer(cols = c(x_min, x_max),
+               names_to = "limit_type",
+               values_to = "x") 
+
+
+Study_data %>%
+  mutate(diffHR1 = GET_HR - BP1_HR,
+         diffSP1 = GET_speed - BP1_speed,
+         diffHR2 = RCP_HR - BP2_HR,
+         diffSP2 = RCP_speed - BP2_speed) %>%
+  pivot_longer(
+    cols = starts_with("diff"),
+    names_to = "Comparison",
+    values_to = "Difference",
+    names_prefix = "diff"
+  ) %>%
+  mutate(Measure = ifelse(str_starts(Comparison, "SP"),"speed", "heart rate"),
+         Threshold = ifelse(str_ends(Comparison, "1"),"1st Thd","2nd Thd"),
+         Threshold = factor (Threshold, levels = c("2nd Thd","1st Thd"))) %>%
+  ggplot(aes(Difference, Threshold, fill = Threshold)) +
+  geom_vline(data = vlines, aes(xintercept = vline_pos), linetype = 2) +
+  geom_rect(data= shaded_df, 
+            aes (xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax), 
+            fill = "grey90", inherit.aes = FALSE) +
+  stat_slab(normalize = "panels", adjust = 1.5) +
+  stat_dots(color = "grey", fill = "grey", scale = 0.5) +
+  stat_summary(fun = mean, geom = "point", color = "black", size = 2, position = position_nudge(y = -0.03)) +
+  stat_summary(fun.data = mean_cl_normal, fun.args = list(conf.int = 0.90),
+               geom = "pointrange", color = "black", position = position_nudge(y = -0.03)) +
+  facet_wrap(~Measure, scales = "free") +
+  labs(
+    y = NULL,
+    caption = "grey areas present the equivalence range"
+  ) + 
+  scale_color_manual(values = c(clrs[1:2])) +
+  scale_fill_manual(values = c(clrs[1:2])) +
+  theme(
+    legend.position = "none"
+    )
+```
+
+## Content for the manuscript {#sec-manuscript}
+
+## Session Info
+
+```{r}
+sessionInfo()
+```
+
+## References

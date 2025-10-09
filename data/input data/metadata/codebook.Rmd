@@ -7,6 +7,8 @@ output:
     toc_float: true
     code_folding: 'hide'
     self_contained: true
+    embed-resources: true
+    self-contained-math: true
   pdf_document:
     toc: yes
     toc_depth: 4
@@ -17,7 +19,7 @@ output:
 
 This is the codebook for the file `data_NIRS_BPs_2025.xlsx`.
 
-The data is collected from high-level triathletes (Performance Level 3 according to De Pau et al., 2013) performing an incremental running test on a 400 m outdoor track. The test commenced at 8 km/h for 2 minutes. After that, the speed increased by 0.5 km/h every minute. Pacing was provided using an acoustic signal when the participant was passing a cone every 20 m.
+The data is collected from national level male triathletes (Performance Tier3 according to McKay et al., 2022) performing an incremental running test on a 400 m outdoor track. The test commenced at 8 km/h for 2 minutes. After that, the speed increased by 0.5 km/h every minute. Pacing was provided using an acoustic signal when the participant was passing a cone every 20 m.
 
 Ventilatory thresholds (GET, RCP) and SmO~2~ breakpoints (BP1, BP2) were visually identified and the time, heart rate and speed at the thresholds extracted.
 
@@ -51,6 +53,8 @@ var_label(data_NIRS_BPs_2025) <- list(
   Age = "Age in years.",
   Height = "Height in centimeters.",
   Weight = "Body mass in kilograms.",
+  ATT_left = "Adipose Tissue Thickness at the left vastus lateralis muscle in milimeters.",
+  ATT_right = "Adipose Tissue Thickness at the right vastus lateralis muscle in milimeters.",
   v_peak = "peak velocity during the incremental exercise tests in kilometers per hour.",
   MAS = "maximal aerobic speed in kilometers per hour.",
   absVO2max = "Maximal oxygen uptake in liter per minute.",

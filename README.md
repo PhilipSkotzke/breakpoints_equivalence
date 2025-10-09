@@ -11,7 +11,6 @@ breakpoint_equivalence
   ├── data
   |   ├── input data
   |   |   └── metadata
-  |   ├── analysis data
   |   └── references - for the Computational Notebook
   └── output
       ├── results

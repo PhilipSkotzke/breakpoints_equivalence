@@ -139,8 +139,8 @@ Note, based on the existing literature no directional difference would be assume
 
 ### Empirical Hypothesis
 
-1.  The heart rate and speed derived from a the VAM-EVAL incremental test in highly trained triathletes are equivalent between BP1 and GET .
-2.  The heart rate and speed derived from a the VAM-EVAL incremental test in highly trained triathletes are equivalent between BP2 and RCP.
+1.  The heart rate and speed derived from a the VAM-EVAL incremental test in highly trained male triathletes are equivalent between BP1 and GET .
+2.  The heart rate and speed derived from a the VAM-EVAL incremental test in highly trained male triathletes are equivalent between BP2 and RCP.
 
 ### Statistical Hypothesis
 
@@ -162,7 +162,7 @@ As indicated by the formulation, the hypothesis can be tested using an equivalen
 
 The test-retest reliability for speed at the GET and RCP is typically in the range of 0.2-0.4 km/h [e.g. @Cerezuela-espejo2018; @Dickhuth1999]. Furthermore, a critical difference of 0.5 km/h between lactate thresholds and MLSS has been used before for criterion validity and is justified by its relevance to athletic performance [@Dörr2010]. **Thus, we will use 0.5 km/h as SESOI.**
 
-For heart rate, the typical error of measurement has been reported to be 3.8% for VT1 and 2.5% for VT2 [@Weston2001], corresponding to 5 and 4 bpm, respectively. In a different investigation, the standard error of measurement was 3-4 bpm. **Thus, we will use 5 bpm as SESOI.**
+For heart rate, the typical error of measurement has been reported to be 3.8% for VT1 and 2.5% for VT2 [@Weston2001], corresponding to 5 and 4 bpm, respectively. In a different investigation, the standard error of measurement was 3-4 bpm [@Yogev2023b]. **Thus, we will use 5 bpm as SESOI.**
 
 Please note, the two hypotheses pairs are formulated as conjunction. In contrast to @Mesquida2025 we use logical connectors instead of set operators. We argue that the intersection-union approach is the right one for our research question. It would be justified to go a step further and use the $\land$ ("and") connector to combine our hypotheses about the first and second threshold because only if we can use SmO~2~ to delineate *all* three intensity domains it would be interchangeable with ventilatory thresholds. However, if NIRS can be used to establish either threshold, it would be useful. As a consequence, we don't have to apply $\alpha$ error corrections.
 
@@ -191,14 +191,14 @@ First, we create tables with descriptive statistics.
 ```{r}
 
 Study_data %>%
-  select(Age, Height, Weight, v_peak, MAS, absVO2max, VO2max) %>%
+  select(Age, Height, Weight, ATT_left, ATT_right, v_peak, MAS, absVO2max, VO2max) %>%
   mutate(BMI = Weight / (Height/100)^2) %>%
     tbl_summary(
     type = ~ "continuous",
     statistic = all_continuous() ~ "{mean} \u00B1 {sd} [{min} - {max}]",
     missing_text = "missing",
     digits = list(
-      c(Age, Height, Weight, v_peak, MAS, VO2max, BMI) ~ 1,
+      c(Age, Height, Weight, ATT_left, ATT_right, v_peak, MAS, VO2max, BMI) ~ 1,
       c(absVO2max) ~ 0
     )
   ) %>%
@@ -206,7 +206,7 @@ Study_data %>%
   tab_header(title = "Participant Characteristics")
 
 Study_data %>%
-  select(-c(ID, Age, Height, Weight, v_peak, MAS, VO2max, absVO2max)) %>%
+  select(-c(ID, Age, Height, Weight, ATT_left, ATT_right, v_peak, MAS, VO2max, absVO2max)) %>%
   tbl_summary(
     type = ~ "continuous",
     statistic = all_continuous() ~ "{mean} \u00B1 {sd}",
@@ -361,7 +361,7 @@ plot(EQ2_SP, "simple", estimates = "raw")
 
 ### Power Analysis/Sample Size Estimation
 
-Initially we set out to perform a sensitivity analysis to calculate the statistical power we achieved with our sample. However, as the mean differences are outside our pre-defined equialence range, we cannot calculate our power (it is 0).
+Initially we set out to perform a sensitivity analysis to calculate the statistical power we achieved with our sample. However, as the mean differences are outside our pre-defined equivalence range, we cannot calculate our power (it is 0).
 
 What we do instead is to calculate the necessary sample size needed to achieve 80% power with an $\alpha$ of 0.05 and our pre-defined equivalence bounds *if a breakpoint estimation method is used that has a true mean difference of 0 compared to the ventilatory threshold* and the standard deviation of the difference is reasonably well estimated by the standard deviation of our sample.
 
@@ -474,7 +474,7 @@ Note: The first sample size calculation assumes a true difference between method
 
 Based on these sample size calculations, we argue that future studies need at least 71 participants to test equivalence of BP2 with RCP an at least 215 participants to test equivalence of BP1 with GET to achieve 80% power *if the new method has the same standard deviation of differences*. If a future method for breakpoint estimation shows less variability (lower standard deviation of differences), lower sample sizes may suffice.
 
-However, **we recommend future studies to specify their expected true difference in advance based on the existing literature.** It is unlikely that the differences is 0, thus resorting to the estimated sample sizes for a true difference of 0 may be perceived as considered practice. As seen in the above table, the required sample sizes are much lower compared to a small difference. This will lead to under-powered studies not able to test the hyptohesis.
+However, **we recommend future studies to specify their expected true difference in advance based on the existing literature.** It is unlikely that the differences is 0, thus resorting to the estimated sample sizes for a true difference of 0 may be perceived as considered practice. As seen in the above table, the required sample sizes are much lower compared to a small difference. This will lead to under-powered studies not able to test the hypothesis.
 
 ## Summary
 
@@ -500,6 +500,8 @@ summary %>%
     "Comparison", "p NHST", "p equivalence test", "difference", "lower CI", "upper CI"
   )) %>%
   kable_styling()
+
+options(scipen = 4)
 ```
 
 Based on our previous stated hypotheses, we conclude:
@@ -560,6 +562,7 @@ summary_data %>%
   ggplot(aes(estimate, test)) +
   geom_vline(data = vlines, aes(xintercept = vline_pos), linetype = 2) +
   geom_rect(data= shaded_df, aes (xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax), fill = "grey90", inherit.aes = FALSE) +
+  geom_vline(xintercept = 0, linetype = 3) +
   geom_blank(data = xlimits, aes(x = x), inherit.aes = FALSE) +
   geom_point() +
   geom_linerange(aes(xmin = lower.ci, xmax = upper.ci)) +
@@ -613,12 +616,13 @@ Study_data %>%
          Threshold = ifelse(str_ends(Comparison, "1"),"1st Thd","2nd Thd"),
          Threshold = factor (Threshold, levels = c("2nd Thd","1st Thd"))) %>%
   ggplot(aes(Difference, Threshold, fill = Threshold)) +
-  geom_vline(data = vlines, aes(xintercept = vline_pos), linetype = 2) +
+  stat_slab(normalize = "panels", adjust = 1.5) +
   geom_rect(data= shaded_df, 
             aes (xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax), 
-            fill = "grey90", inherit.aes = FALSE) +
-  stat_slab(normalize = "panels", adjust = 1.5) +
-  stat_dots(color = "grey", fill = "grey", scale = 0.5) +
+            fill = "grey90", alpha = 0.5, inherit.aes = FALSE) +
+  stat_dots(color = clrs[3], fill = clrs[3], scale = 0.5) +
+  geom_vline(data = vlines, aes(xintercept = vline_pos), linetype = 2) +
+  geom_vline(xintercept = 0, linetype = 3) +
   stat_summary(fun = mean, geom = "point", color = "black", size = 2, position = position_nudge(y = -0.03)) +
   stat_summary(fun.data = mean_cl_normal, fun.args = list(conf.int = 0.90),
                geom = "pointrange", color = "black", position = position_nudge(y = -0.03)) +

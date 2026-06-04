@@ -48,6 +48,7 @@ library(extrafontdb)# database for extra fonts
 library(ggdist)     # plot distributions
 library(ggplot2)    # create plots
 library(ggtext)     # more flexible plot texts
+library(grid)       # advanced figure formatting
 library(gt)         # gt tables
 library(gtsummary)  # summary tables
 library(kableExtra) # create html tables
@@ -55,6 +56,7 @@ library(MetBrewer)  # better color palettes
 library(patchwork)  # combine plots
 library(readxl)     # read MS Excel files
 library(renv)       # save the project environment
+library(SimplyAgree)# reliability analysis & Bland-Altman plots
 library(stringr)    # manipulate character strings
 library(tidyr)      # data management
 library(TOSTER)     # perform two onesided tests
@@ -115,16 +117,16 @@ loadfonts(quiet = T)
 
 # update renv files (comment out when not needed)
 
-#snapshot()
+# renv::snapshot()
 ```
 
 ## Preface
 
 This file is the **computational notebook** accompanying the main manuscript and is stored on [Github](https://github.com/PhilipSkotzke/breakpoints_equivalence "Link to GitHub Repository") and accessible on [OSF](https://osf.io/u8k2e/ "Link to OSF project"). It contains the reasoning behind analyses performed, the full details on statistical procedures and the analytic code. Please note, that:
 
--   Sub-headers in @sec-manuscript refer to figures and tables generated for the main manuscript or supplements. They are stored in their respective folders `/output/results` and `/output/supplementary` and not presented here.
+- Sub-headers in @sec-manuscript refer to figures and tables generated for the main manuscript or supplements. They are stored in their respective folders `/output/results` and `/output/supplementary` and not presented here.
 
--   The code used to produce the results in this document can be viewed by clicking on the `Code` button to unfold it.
+- The code used to produce the results in this document can be viewed by clicking on the `Code` button to unfold it.
 
 ::: {.callout-tip collapse="true"}
 ## This is a reproducible document
@@ -199,6 +201,8 @@ Study_data <- read_xlsx("data/input data/data_NIRS_BPs_2025.xlsx")
 
 ### Descriptive Statistics
 
+#### Descriptive Table
+
 First, we create tables with descriptive statistics.
 
 ```{r}
@@ -206,14 +210,15 @@ First, we create tables with descriptive statistics.
 
 # the gtsummary::tbl_summary() function is used after selecting the variables for participant characteristics
 Study_data %>%
-  select(Age, Height, Weight, ATT_left, ATT_right, v_peak, MAS, absVO2max, VO2max) %>%
-  mutate(BMI = Weight / (Height/100)^2) %>%
+  select(Age, Height, Weight, ATT_left, ATT_right, Test_duration, v_peak, MAS, absVO2max, VO2max) %>%
+  mutate(BMI = Weight / (Height/100)^2,
+         Test_duration = Test_duration/60) %>%
     tbl_summary(
     type = ~ "continuous",
     statistic = all_continuous() ~ "{mean} \u00B1 {sd} [{min} - {max}]",
     missing_text = "missing",
     digits = list(
-      c(Age, Height, Weight, ATT_left, ATT_right, v_peak, MAS, VO2max, BMI) ~ 1,
+      c(Age, Height, Weight, ATT_left, ATT_right, Test_duration, v_peak, MAS, VO2max, BMI) ~ 1,
       c(absVO2max) ~ 0
     )
   ) %>%
@@ -238,7 +243,206 @@ Study_data %>%
   
 ```
 
+#### Visualization of Threshold estimates
+
+To get a visual idea how the distributions of BP1/GET and BP2/RCP look like in our sample, boxplots are created.
+
+```{r}
+#| label: BoxPlotDesc
+
+bxplt_data <- Study_data |>
+  pivot_longer(
+    cols = matches("_(HR|Speed)$"),
+    names_to = c("Measure",".value"),
+    names_pattern = "(.*)_(HR|speed)"
+  ) |>
+  mutate(
+    Method = ifelse(Measure %in% c("BP1", "BP2"), "NIRS", "VT"),
+    Threshold = ifelse(Measure %in% c("BP1", "GET"), "Threshold 1", "Threshold 2"),
+    Measure = factor(Measure, levels = c("BP1", "GET", "BP2", "RCP"))
+ ) |>
+  select(ID, speed, HR, Measure, Threshold, Method) |>
+  drop_na() |>
+  group_by(ID, Threshold) |>
+  filter(n_distinct(Measure) == 2) |>
+  group_by(ID) |>
+  filter(n_distinct(Threshold) == 2) |>
+  ungroup() 
+
+bxplt_data |>
+  ggplot(aes(Measure, HR, group = Measure, fill = Method)) +
+  geom_line(aes(group = ID), color = "grey40", alpha = 0.7, linewidth = 0.6) +
+  geom_point(aes(group = ID), size = 2) +
+  geom_boxplot(alpha = .5) +
+  facet_wrap(~Threshold,
+             scales = "free_x") +
+  scale_fill_manual(values = c(clrs[1:2])) +
+  labs(
+    x = NULL,
+    y = "Heart rate (bpm)"
+  ) +
+  theme(
+    legend.position = "none"
+  ) 
+
+bxplt_data |>
+  ggplot(aes(Measure, speed, group = Measure, fill = Method)) +
+  geom_line(aes(group = ID), color = "grey40", alpha = 0.7, linewidth = 0.6) +
+  geom_point(aes(group = ID), size = 2) +
+  geom_boxplot(alpha = .5) +
+  facet_wrap(~Threshold,
+             scales = "free_x") +
+  scale_fill_manual(values = c(clrs[1:2])) +
+  labs(
+    x = NULL,
+    y = "Speed (km/h)"
+  ) +
+  theme(
+    legend.position = "none"
+  ) 
+```
+
+#### Bland Altman Plots for Heteroscedasticity
+
+```{r}
+#| label: DescBlandAltman
+
+# first, calculate Bland Altman statistics
+BA_VT1_HR <- agreement_limit(x = "GET_HR", y ="BP1_HR", data = Study_data, loa_calc = "blandaltman")
+BA_VT1_speed <- agreement_limit(x = "GET_speed", y ="BP1_speed", data = Study_data, loa_calc = "blandaltman")
+BA_VT2_HR <- agreement_limit(x = "RCP_HR", y ="BP2_HR", data = Study_data, loa_calc = "blandaltman")
+BA_VT2_speed <- agreement_limit(x = "RCP_speed", y ="BP2_speed", data = Study_data, loa_calc = "blandaltman")
+
+# now create bland altman plots
+# for BP1 vs GET hr
+ba_Thd1_HR <- Study_data %>% 
+  ggplot(aes((BP1_HR + GET_HR)/2, GET_HR - BP1_HR)) +
+  labs(
+    x = "Mean heart rate (bpm)",
+    y = "Difference in heart rate (GET minus BP1)"
+  ) +
+  geom_point(size = 2)
+
+ba_Thd1_HR +
+  geom_hline(yintercept = 0, linetype = "solid") +
+  geom_hline(yintercept = BA_VT1_HR$loa$bias, linetype = "solid", color = clrs[2]) +
+  geom_hline(yintercept = c(BA_VT1_HR$loa$lower_loa, BA_VT1_HR$loa$upper_loa), linetype = "dashed", color = clrs[1])
+
+
+# for BP1 vs GET speed
+ba_Thd1_speed <- Study_data %>% 
+  ggplot(aes((BP1_speed + GET_speed)/2, GET_speed - BP1_speed)) +
+  geom_point(size = 2) +
+  labs(
+    x = "Mean speed (km/h)",
+    y = "Difference in speed (RCP minus BP2)"
+  )
+
+# draw fiugre and add bias + LoA
+ba_Thd1_speed +
+  geom_hline(yintercept = 0, linetype = "solid") +
+  geom_hline(yintercept = BA_VT1_speed$loa$bias, linetype = "solid", color = clrs[2]) +
+  geom_hline(yintercept = c(BA_VT1_speed$loa$lower_loa, BA_VT1_speed$loa$upper_loa), linetype = "dashed", color = clrs[1])
+
+# for BP2 vs RCP hr
+ba_Thd2_HR <- Study_data %>% 
+  ggplot(aes((BP2_HR + RCP_HR)/2, RCP_HR - BP2_HR)) +
+  geom_point(size = 2) +
+  labs(
+    x = "Mean heart rate (bpm)",
+    y = "Difference in heart rate (RCP minus BP2)"
+  )
+ba_Thd2_HR +
+  geom_hline(yintercept = 0, linetype = "solid") +
+  geom_hline(yintercept = BA_VT2_HR$loa$bias, linetype = "solid", color = clrs[2]) +
+  geom_hline(yintercept = c(BA_VT2_HR$loa$lower_loa, BA_VT2_HR$loa$upper_loa), linetype = "dashed", color = clrs[1])
+
+# for BP2 vs RCP speed
+ba_Thd2_speed <- Study_data %>% 
+  ggplot(aes((BP2_speed + RCP_speed)/2, RCP_speed - BP2_speed)) +
+  geom_point(size = 2) +
+  labs(
+    x = "Mean speed (km/h)",
+    y = "Difference in speed (RCP minus BP2)"
+  )
+
+ba_Thd2_speed +
+  geom_hline(yintercept = 0, linetype = "solid") +
+  geom_hline(yintercept = BA_VT2_speed$loa$bias, linetype = "dotted", color = clrs[2]) +
+  geom_hline(yintercept = c(BA_VT2_speed$loa$lower_loa, BA_VT2_speed$loa$upper_loa), linetype = "dashed", color = clrs[1]) 
+```
+
+The Bland Altman plots show no clear indication of heteroscedasticity.
+
 ### Inferential Statistics
+
+#### Reliability
+
+The ICC(3,1) for absolute agreement is calculated to observe the relation between unexplained and explained variance. However, the `{simplyAgree}` package doesn't natively output ICC(3,1)~abs~. Instead, use the output for ICC(2,1), which is numerically identical.
+
+```{r}
+
+# for that, create long-form data
+Study_data_long <- Study_data %>% 
+  pivot_longer(
+    cols = matches("_(HR|Speed)$"),
+    names_to = c("Measure",".value"),
+    names_pattern = "(.*)_(HR|speed)"
+  ) |>
+  mutate(
+    Method = ifelse(Measure %in% c("BP1", "BP2"), "NIRS", "VT"),
+    Threshold = ifelse(Measure %in% c("BP1", "GET"), "Threshold 1", "Threshold 2"),
+    Measure = factor(Measure, levels = c("BP1", "GET", "BP2", "RCP"))
+ ) 
+
+# ICC for Thd1 HR
+icc_Thd1_HR <- reli_aov(
+  measure = "HR",
+  item = "Measure",
+  id = "ID",
+  data = Study_data_long |> filter(Threshold == "Threshold 1")
+)
+
+# ICC for Thd1 speed
+icc_Thd1_speed <- reli_aov(
+  measure = "speed",
+  item = "Measure",
+  id = "ID",
+  data = Study_data_long |> filter(Threshold == "Threshold 1")
+)
+
+# ICC for Thd2 HR
+icc_Thd2_HR <- reli_aov(
+  measure = "HR",
+  item = "Measure",
+  id = "ID",
+  data = Study_data_long |> filter(Threshold == "Threshold 2")
+)
+
+# ICC for Thd2 speed
+icc_Thd2_speed <- reli_aov(
+  measure = "speed",
+  item = "Measure",
+  id = "ID",
+  data = Study_data_long |> filter(Threshold == "Threshold 2")
+)
+
+# visualize
+icc_results <- bind_rows(
+  icc_Thd1_HR$icc[2,4:6]   |> mutate(Method = "Threshold 1 - HR",   .before = 1),
+  icc_Thd1_speed$icc[2,4:6]   |> mutate(Method = "Threshold 1 - Speed",   .before = 1),
+  icc_Thd2_HR$icc[2,4:6]   |> mutate(Method = "Threshold 2 - HR",   .before = 1),
+  icc_Thd2_speed$icc[2,4:6]   |> mutate(Method = "Threshold 2 - Speed",   .before = 1)
+)
+
+rownames(icc_results) <- NULL  # clean up the leftover row number "2"
+
+kbl(icc_results, digits = 3) %>%
+  kable_styling(full_width = FALSE)
+
+```
+
+#### Equivalence Testing
 
 To test the assumptions, the normality of differences is visually checked using qq-plots and statistically tested with the Shapiro-Wilk test for heart rate and speed at the first and second threshold.
 
@@ -510,6 +714,26 @@ Based on these sample size calculations, we argue that future studies need at le
 However, **we recommend future studies to specify their expected true difference in advance based on the existing literature.** It is unlikely that the differences is 0, thus resorting to the estimated sample sizes for a true difference of 0 may be perceived as bad practice. As seen in the above table, the required sample sizes are much lower when assuming a true difference of 0, compared to a small difference. This will lead to under-powered studies not able to severely test the hypothesis of equivalence between threshold detection methods.
 
 ## Summary
+
+The reliability coefficients are the following:
+
+```{r}
+n_icc <- c(icc_Thd1_HR$n.id,
+           icc_Thd1_speed$n.id,
+           icc_Thd2_HR$n.id,
+           icc_Thd2_speed$n.id)
+
+icc_results <- icc_results %>% 
+  mutate(
+    "ICC" = round(icc,2),
+    "n" = n_icc,
+    "95% CI" = paste0("[",round(lower.ci,2)," , ",round(upper.ci,2),"]")
+    ) %>% 
+  select(Method, n, ICC, `95% CI`)
+
+kbl(icc_results, digits = 3) %>%
+  kable_styling(full_width = FALSE)
+```
 
 The four equivalence tests are summarized in the following table:
 
@@ -791,7 +1015,178 @@ ggsave("output/results/Fig1.eps",
 ```{r}
 #| label: Fig2
 
-# data for vlines
+# create labels to add the ICC to the boxplots
+icc_labels_speed <- data.frame(
+  Threshold = c("Threshold 1", "Threshold 2"),
+  ICC   = c(icc_Thd1_speed$icc[2, 4], icc_Thd2_speed$icc[2, 4]),
+  lower = c(icc_Thd1_speed$icc[2, 5], icc_Thd2_speed$icc[2, 5]),
+  upper = c(icc_Thd1_speed$icc[2, 6], icc_Thd2_speed$icc[2, 6]),
+  n     = c(icc_Thd1_speed$n.id,       icc_Thd2_speed$n.id)
+) |>
+  mutate(label = paste0(
+    "ICC(3,1)[abs] == '",
+    round(ICC, 2), " [", round(lower, 2), ", ", round(upper, 2), "] (n = ", n, ")'"
+  ))
+
+icc_labels_HR <- data.frame(
+  Threshold = c("Threshold 1", "Threshold 2"),
+  ICC   = c(icc_Thd1_HR$icc[2, 4], icc_Thd2_HR$icc[2, 4]),
+  lower = c(icc_Thd1_HR$icc[2, 5], icc_Thd2_HR$icc[2, 5]),
+  upper = c(icc_Thd1_HR$icc[2, 6], icc_Thd2_HR$icc[2, 6]),
+  n     = c(icc_Thd1_HR$n.id,       icc_Thd2_HR$n.id)
+) |>
+  mutate(label = paste0(
+    "ICC(3,1)[abs] == '",
+    round(ICC, 2), " [", round(lower, 2), ", ", round(upper, 2), "] (n = ", n, ")'"
+  ))
+
+Fig2A <- bxplt_data |>
+  ggplot(aes(Measure, speed, group = Measure, fill = Method)) +
+  geom_boxplot(alpha = .5) +
+  geom_point(aes(group = ID), size = 2) +
+  geom_line(aes(group = ID), color = "grey40", alpha = 0.7, linewidth = 0.6) +
+  geom_text(
+    data = icc_labels_speed,
+    aes(label = label, x = -Inf, y = Inf),
+    hjust = -0.05, vjust = 1.5,
+    size = 3, inherit.aes = FALSE,
+    parse = TRUE
+  ) +
+  facet_wrap(~Threshold,
+             scales = "free_x") +
+  scale_fill_manual(values = c(clrs[1:2])) +
+  scale_y_continuous(limits = c(NA,21)) +
+  labs(
+    x = NULL,
+    y = "Speed [km/h]"
+  ) +
+  theme(
+    legend.position = "none",
+    axis.title = element_text(family = "Arial", size = 9),
+    axis.text = element_text(family = "Arial", size = 9),
+    text = element_text(family = "Arial", size = 9)
+  )
+
+Fig2B <- bxplt_data |>
+  ggplot(aes(Measure, HR, group = Measure, fill = Method)) +
+  geom_boxplot(alpha = .5) +
+  geom_point(aes(group = ID), size = 2) +
+  geom_line(aes(group = ID), color = "grey40", alpha = 0.7, linewidth = 0.6) +
+  geom_text(
+    data = icc_labels_HR,
+    aes(label = label, x = -Inf, y = Inf),
+    hjust = -0.05, vjust = 1.5,
+    size = 3, inherit.aes = FALSE,
+    parse = TRUE
+  ) +
+  facet_wrap(~Threshold,
+             scales = "free_x") +
+  scale_fill_manual(values = c(clrs[1:2])) +
+  scale_y_continuous(limits = c(NA,210)) +
+  labs(
+    x = NULL,
+    y = "Heart rate [bpm]"
+  ) +
+  theme(
+    legend.position = "none",
+    axis.title = element_text(family = "Arial", size = 9),
+    axis.text = element_text(family = "Arial", size = 9),
+    text = element_text(family = "Arial", size = 9)
+  )
+
+
+# now combine plots next to each other
+Fig2 <- Fig2A + Fig2B + 
+  patchwork::plot_annotation(tag_levels = "A")
+
+ggsave("output/results/Fig2.jpeg",
+       plot = Fig2,
+       device = "jpeg",
+       width = 300,
+       height = 112.5,
+       units = "mm",
+       dpi = 1200)
+
+ggsave("output/results/Fig2.eps",
+       plot = Fig2,
+       device = cairo_ps,
+       width = 300,
+       height = 112.5,
+       units = "mm",
+       dpi = 1200)
+```
+
+### Figure 3
+
+```{r}
+#| label: Fig3
+
+
+########################################################
+# for this figure, some advanced formatting is required
+########################################################
+
+# create differece data
+plot_data <- Study_data %>%
+  mutate(diffHR1 = GET_HR - BP1_HR,
+         diffSP1 = GET_speed - BP1_speed,
+         diffHR2 = RCP_HR - BP2_HR,
+         diffSP2 = RCP_speed - BP2_speed) %>%
+  pivot_longer(
+    cols = starts_with("diff"),
+    names_to = "Comparison",
+    values_to = "Difference",
+    names_prefix = "diff"
+  ) %>%
+  mutate(Measure = ifelse(str_starts(Comparison, "SP"),"Speed [km/h]", "Heart Rate [bpm]"),
+         Threshold = ifelse(str_ends(Comparison, "1"),"1st Thd","2nd Thd"),
+         Threshold = factor (Threshold, levels = c("2nd Thd","1st Thd")))
+
+# create functions to draw not all plot boarders
+## remove right border
+three_sided_border <- function(colour = "black", linewidth = 0.7) {
+  structure(
+    list(colour = colour, linewidth = linewidth),
+    class = c("three_sided_border", "element_blank", "element", "rel")
+  )
+}
+
+element_grob.three_sided_border <- function(element, x = 0, y = 0, width = 1, height = 1, ...) {
+  polylineGrob(
+    x = c(x,         x + width,   # bottom
+           x,         x,           # left
+           x,         x + width),  # top
+    y = c(y,         y,            # bottom
+           y,         y + height,  # left
+           y + height, y + height), # top
+    id = c(1, 1, 2, 2, 3, 3),
+    default.units = "npc",
+    gp = gpar(lwd = element$linewidth * .pt, col = element$colour)
+  )
+}
+## remove left border
+three_sided_border_noleft <- function(colour = "black", linewidth = 0.7) {
+  structure(
+    list(colour = colour, linewidth = linewidth),
+    class = c("three_sided_border_noleft", "element_blank", "element", "rel")
+  )
+}
+
+element_grob.three_sided_border_noleft <- function(element, x = 0, y = 0, width = 1, height = 1, ...) {
+  polylineGrob(
+    x = c(x,           x + width,    # bottom
+           x + width,   x + width,    # right
+           x,           x + width),   # top
+    y = c(y,           y,             # bottom
+           y,           y + height,   # right
+           y + height,  y + height),  # top
+    id = c(1, 1, 2, 2, 3, 3),
+    default.units = "npc",
+    gp = gpar(lwd = element$linewidth * .pt, col = element$colour)
+  )
+}
+
+# data for equivalence lines
 vlines <- data.frame(
   Measure = c("Heart Rate [bpm]","Heart Rate [bpm]","Speed [km/h]","Speed [km/h]"),
   vline_pos = c(-5, 5, -0.5, 0.5)
@@ -817,60 +1212,249 @@ xlimits <- data.frame(
                values_to = "x") 
 
 
-Fig2 <- Study_data %>%
-  mutate(diffHR1 = GET_HR - BP1_HR,
-         diffSP1 = GET_speed - BP1_speed,
-         diffHR2 = RCP_HR - BP2_HR,
-         diffSP2 = RCP_speed - BP2_speed) %>%
-  pivot_longer(
-    cols = starts_with("diff"),
-    names_to = "Comparison",
-    values_to = "Difference",
-    names_prefix = "diff"
-  ) %>%
-  mutate(Measure = ifelse(str_starts(Comparison, "SP"),"Speed [km/h]", "Heart Rate [bpm]"),
-         Threshold = ifelse(str_ends(Comparison, "1"),"1st Thd","2nd Thd"),
-         Threshold = factor (Threshold, levels = c("2nd Thd","1st Thd"))) %>%
-  ggplot(aes(Difference, Threshold, fill = Threshold)) +
-  stat_slab(normalize = "panels", adjust = 1.5) +
-  geom_rect(data= shaded_df, 
-            aes (xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax), 
-            fill = "grey90", alpha = 0.5, inherit.aes = FALSE) +
-  stat_dots(color = "grey30", fill = "grey30", scale = 0.5) +
-  geom_vline(data = vlines, aes(xintercept = vline_pos), linetype = 2) +
-  geom_vline(xintercept = 0, linetype = 3) +
-  stat_summary(fun = mean, geom = "point", color = "black", size = 2, position = position_nudge(y = -0.03)) +
-  stat_summary(fun.data = mean_cl_normal, fun.args = list(conf.int = 0.90),
-               geom = "pointrange", color = "black", position = position_nudge(y = -0.03)) +
-  facet_wrap(~Measure, scales = "free") +
-  labs(
-    y = NULL,
-    x = "Difference (VT minus BP)"
-  ) + 
-  scale_color_manual(values = c(clrs[1:2])) +
-  scale_fill_manual(values = c(clrs[1:2])) +
-  theme(
-    legend.position = "none",
-    axis.title = element_text(family = "Arial", size = 9),
-    axis.text = element_text(family = "Arial", size = 9),
-    text = element_text(family = "Arial", size = 9)
-    )
+# now use the bland altman plots as basis for the left side and equivalence plots for right side of the final plots
 
-ggsave("output/results/Fig2.jpeg",
-       plot = Fig2,
+## Thd1 HR
+### bland altman
+ba_Thd1_HR <- ba_Thd1_HR + 
+  geom_hline(yintercept = BA_VT1_HR$loa$bias, linetype = "solid", color = clrs[2]) +
+  # geom_hline(yintercept = c(BA_VT1_HR$loa$lower_loa, BA_VT1_HR$loa$upper_loa), linetype = "dashed", color = clrs[1]) +
+  geom_rect(data = shaded_df %>% filter(Measure == "Heart Rate [bpm]"), # filter for relevant column
+            aes(ymin = xmin, ymax = xmax, xmin = ymin, xmax = ymax), 
+            fill = "grey90", alpha = 0.5, inherit.aes = FALSE) +
+  # geom_hline(data = vlines %>% filter(Measure == "Heart Rate [bpm]"), # filter for relevant column
+  #            aes(yintercept = vline_pos), linetype = 2) + 
+  geom_hline(yintercept = 0, linetype = 1) +
+  geom_point(size = 2) +
+  scale_y_continuous(limits = c(-35,15)) +
+  labs(
+    x = "Mean heart rate [bpm]",
+    y = "Difference in speed [GET minus BP1]"
+  ) +
+  theme(
+    plot.margin = margin(t = 5, r = 0, b = 5, l = 5),
+    panel.border = three_sided_border(colour = "black", linewidth = 0.7)
+  )
+
+### equivalence 
+eq_Thd1_HR <- plot_data %>% 
+  filter(Threshold == "1st Thd" & Measure == "Heart Rate [bpm]") %>% 
+  ggplot(aes(Threshold, Difference, fill = Threshold)) +
+  stat_slab(normalize = "panels", adjust = 1.5, alpha = 0.5, fill = clrs[3]) + 
+  geom_rect(data = shaded_df %>% filter(Measure == "Heart Rate [bpm]"), # filter for relevant column
+            aes(ymin = xmin, ymax = xmax, xmin = ymin, xmax = ymax), 
+            fill = "grey90", alpha = 0.5, inherit.aes = FALSE) +
+  # geom_hline(data = vlines %>% filter(Measure == "Heart Rate [bpm]"), # filter for relevant column
+  #            aes(yintercept = vline_pos), linetype = 2) + 
+  geom_hline(yintercept = 0, linetype = 1) +      
+  stat_summary(fun = mean, geom = "point", color = "black", size = 3,
+               position = position_nudge(x = -0.1)) +           
+  stat_summary(fun.data = mean_cl_normal, fun.args = list(conf.int = 0.90),
+               geom = "errorbar", color = "black",
+               position = position_nudge(x = -0.1), linewidth = 1, width = 0.1) +
+  labs(
+    x = NULL,                                                     
+    y = NULL
+  ) +
+  scale_y_continuous(limits = c(-35,15)) +
+  theme(
+  legend.position = "none",
+  axis.title = element_blank(),
+  axis.text = element_blank(),
+  axis.ticks = element_blank(),
+  panel.border = three_sided_border_noleft(colour = "black", linewidth = 0.7),
+  plot.margin = margin(t = 5, r = 5, b = 5, l = 0)
+)
+
+# combine plots with 80/20 width distribution
+p_Thd1_HR <- ba_Thd1_HR + eq_Thd1_HR + plot_layout(widths = c(4, 1))
+
+## Thd1 Speed
+### bland altman
+ba_Thd1_speed <- ba_Thd1_speed + 
+  geom_hline(yintercept = BA_VT1_speed$loa$bias, linetype = "solid", color = clrs[2]) +
+  # geom_hline(yintercept = c(BA_VT1_speed$loa$lower_loa, BA_VT1_speed$loa$upper_loa), linetype = "dashed", color = clrs[1]) +
+  geom_rect(data = shaded_df %>% filter(Measure == "Speed [km/h]"), # filter for relevant column
+            aes(ymin = xmin, ymax = xmax, xmin = ymin, xmax = ymax), 
+            fill = "grey90", alpha = 0.5, inherit.aes = FALSE) +
+  # geom_hline(data = vlines %>% filter(Measure == "Speed [km/h]"), # filter for relevant column
+  #            aes(yintercept = vline_pos), linetype = 2) + 
+  geom_hline(yintercept = 0, linetype = 1) +      
+  geom_point(size = 2) +
+  scale_y_continuous(limits = c(-4,2)) +
+  labs(
+    x = "Mean speed [km/h]",
+    y = "Difference in speed [GET minus BP1]"
+  ) +
+  theme(
+    plot.margin = margin(t = 5, r = 0, b = 5, l = 5),
+    panel.border = three_sided_border(colour = "black", linewidth = 0.7)
+  )
+
+### equivalence 
+eq_Thd1_speed <- plot_data %>% 
+  filter(Threshold == "1st Thd" & Measure == "Speed [km/h]") %>% 
+  ggplot(aes(Threshold, Difference, fill = Threshold)) +
+  stat_slab(normalize = "panels", adjust = 1.5, alpha = 0.5, fill = clrs[3]) + 
+  geom_rect(data = shaded_df %>% filter(Measure == "Speed [km/h]"), # filter for relevant column
+            aes(ymin = xmin, ymax = xmax, xmin = ymin, xmax = ymax), 
+            fill = "grey90", alpha = 0.5, inherit.aes = FALSE) +
+  # geom_hline(data = vlines %>% filter(Measure == "Speed [km/h]"), # filter for relevant column
+  #            aes(yintercept = vline_pos), linetype = 2) + 
+  geom_hline(yintercept = 0, linetype = 1) +      
+  stat_summary(fun = mean, geom = "point", color = "black", size = 3,
+               position = position_nudge(x = -0.1)) +           
+  stat_summary(fun.data = mean_cl_normal, fun.args = list(conf.int = 0.90),
+               geom = "errorbar", color = "black",
+               position = position_nudge(x = -0.1), linewidth = 1, width = 0.1) +
+  labs(
+    x = NULL,                                                     
+    y = NULL
+  ) +
+  scale_y_continuous(limits = c(-4, 2)) +
+theme(
+  legend.position = "none",
+  axis.title = element_blank(),
+  axis.text = element_blank(),
+  axis.ticks = element_blank(),
+  panel.border = three_sided_border_noleft(colour = "black", linewidth = 0.7),
+  plot.margin = margin(t = 5, r = 5, b = 5, l = 0)
+)
+
+# combine plots with 80/20 width distribution
+p_Thd1_speed <- ba_Thd1_speed + eq_Thd1_speed + plot_layout(widths = c(4, 1))
+
+## Thd2 HR
+### bland altman
+ba_Thd2_HR <- ba_Thd2_HR + 
+  geom_hline(yintercept = BA_VT2_HR$loa$bias, linetype = "solid", color = clrs[2]) +
+  # geom_hline(yintercept = c(BA_VT2_HR$loa$lower_loa, BA_VT2_HR$loa$upper_loa), linetype = "dashed", color = clrs[1]) +
+  geom_rect(data = shaded_df %>% filter(Measure == "Heart Rate [bpm]"), # filter for relevant column
+            aes(ymin = xmin, ymax = xmax, xmin = ymin, xmax = ymax), 
+            fill = "grey90", alpha = 0.5, inherit.aes = FALSE) +
+  # geom_hline(data = vlines %>% filter(Measure == "Heart Rate [bpm]"), # filter for relevant column
+  #            aes(yintercept = vline_pos), linetype = 2) + 
+  geom_hline(yintercept = 0, linetype = 1) +      
+  geom_point(size = 2) +
+  scale_y_continuous(limits = c(-35,15)) +
+  labs(
+    x = "Mean heart rate [bpm]",
+    y = "Difference in speed [RCP minus BP2]"
+  ) +
+  theme(
+    plot.margin = margin(t = 5, r = 0, b = 5, l = 5),
+    panel.border = three_sided_border(colour = "black", linewidth = 0.7)
+  )
+
+### equivalence 
+eq_Thd2_HR <- plot_data %>% 
+  filter(Threshold == "2nd Thd" & Measure == "Heart Rate [bpm]") %>% 
+  ggplot(aes(Threshold, Difference, fill = Threshold)) +
+  stat_slab(normalize = "panels", adjust = 1.5, alpha = 0.5, fill = clrs[3]) + 
+  geom_rect(data = shaded_df %>% filter(Measure == "Heart Rate [bpm]"), # filter for relevant column
+            aes(ymin = xmin, ymax = xmax, xmin = ymin, xmax = ymax), 
+            fill = "grey90", alpha = 0.5, inherit.aes = FALSE) +
+  # geom_hline(data = vlines %>% filter(Measure == "Heart Rate [bpm]"), # filter for relevant column
+  #            aes(yintercept = vline_pos), linetype = 2) + 
+  geom_hline(yintercept = 0, linetype = 1) +      
+  stat_summary(fun = mean, geom = "point", color = "black", size = 3,
+               position = position_nudge(x = -0.1)) +           
+  stat_summary(fun.data = mean_cl_normal, fun.args = list(conf.int = 0.90),
+               geom = "errorbar", color = "black",
+               position = position_nudge(x = -0.1), linewidth = 1, width = 0.1) +
+  labs(
+    x = NULL,                                                     
+    y = NULL
+  ) +
+  scale_y_continuous(limits = c(-35,15)) +
+theme(
+  legend.position = "none",
+  axis.title = element_blank(),
+  axis.text = element_blank(),
+  axis.ticks = element_blank(),
+  panel.border = three_sided_border_noleft(colour = "black", linewidth = 0.7),
+  plot.margin = margin(t = 5, r = 5, b = 5, l = 0)
+)
+
+# combine plots with 80/20 width distribution
+p_Thd2_HR <- ba_Thd2_HR + eq_Thd2_HR + plot_layout(widths = c(4, 1))
+
+## Thd2 Speed
+### bland altman
+ba_Thd2_speed <- ba_Thd2_speed + 
+  geom_hline(yintercept = BA_VT2_speed$loa$bias, linetype = "solid", color = clrs[2]) +
+  # geom_hline(yintercept = c(BA_VT2_speed$loa$lower_loa, BA_VT2_speed$loa$upper_loa), linetype = "dashed", color = clrs[1]) +
+  geom_rect(data = shaded_df %>% filter(Measure == "Speed [km/h]"), # filter for relevant column
+            aes(ymin = xmin, ymax = xmax, xmin = ymin, xmax = ymax), 
+            fill = "grey90", alpha = 0.5, inherit.aes = FALSE) +
+  # geom_hline(data = vlines %>% filter(Measure == "Speed [km/h]"), # filter for relevant column
+  #            aes(yintercept = vline_pos), linetype = 2) + 
+  geom_hline(yintercept = 0, linetype = 1) +      
+  geom_point(size = 2) +
+  scale_y_continuous(limits = c(-4,2)) +
+  labs(
+    x = "Mean speed [km/h]",
+    y = "Difference in speed [RCP minus BP2]"
+  ) +
+  theme(
+    plot.margin = margin(t = 5, r = 0, b = 5, l = 5),
+    panel.border = three_sided_border(colour = "black", linewidth = 0.7)
+  )
+
+### equivalence 
+eq_Thd2_speed <- plot_data %>% 
+  filter(Threshold == "2nd Thd" & Measure == "Speed [km/h]") %>% 
+  ggplot(aes(Threshold, Difference, fill = Threshold)) +
+  stat_slab(normalize = "panels", adjust = 1.5, alpha = 0.5, fill = clrs[3]) + 
+  geom_rect(data = shaded_df %>% filter(Measure == "Speed [km/h]"), # filter for relevant column
+            aes(ymin = xmin, ymax = xmax, xmin = ymin, xmax = ymax), 
+            fill = "grey90", alpha = 0.5, inherit.aes = FALSE) +
+  # geom_hline(data = vlines %>% filter(Measure == "Speed [km/h]"), # filter for relevant column
+  #            aes(yintercept = vline_pos), linetype = 2) + 
+  geom_hline(yintercept = 0, linetype = 1) +      
+  stat_summary(fun = mean, geom = "point", color = "black", size = 3,
+               position = position_nudge(x = -0.1)) +           
+  stat_summary(fun.data = mean_cl_normal, fun.args = list(conf.int = 0.90),
+               geom = "errorbar", color = "black",
+               position = position_nudge(x = -0.1), linewidth = 1, width = 0.1) +
+  labs(
+    x = NULL,                                                     
+    y = NULL
+  ) +    
+  scale_y_continuous(limits = c(-4,2)) +
+theme(
+  legend.position = "none",
+  axis.title = element_blank(),
+  axis.text = element_blank(),
+  axis.ticks = element_blank(),
+  panel.border = three_sided_border_noleft(colour = "black", linewidth = 0.7),
+  plot.margin = margin(t = 5, r = 5, b = 5, l = 0)
+)
+
+# combine plots with 80/20 width distribution
+p_Thd2_speed <- ba_Thd2_speed + eq_Thd2_speed + plot_layout(widths = c(4, 1))
+
+
+Fig3 <- (wrap_elements(p_Thd1_speed) | wrap_elements(p_Thd2_speed)) /
+        (wrap_elements(p_Thd1_HR) | wrap_elements(p_Thd2_HR)) +
+  plot_annotation(tag_levels = "A")
+
+ggsave("output/results/Fig3.jpeg",
+       plot = Fig3,
        device = "jpeg",
-       width = 150,
-       height = 112.5,
+       width = 300,
+       height = 225,
        units = "mm",
        dpi = 1200)
 
-ggsave("output/results/Fig2.eps",
-       plot = Fig1,
+ggsave("output/results/Fig3.eps",
+       plot = Fig3,
        device = cairo_ps,
        width = 150,
        height = 112.5,
        units = "mm",
        dpi = 1200)
+
 ```
 
 ### Table 1
@@ -880,14 +1464,15 @@ ggsave("output/results/Fig2.eps",
 #| output: false
 
 Tbl1 <- Study_data %>%
-  select(Age, Height, Weight, ATT_left, ATT_right, v_peak, MAS, absVO2max, VO2max) %>%
-  mutate(BMI = Weight / (Height/100)^2) %>%
+  select(Age, Height, Weight, ATT_left, ATT_right, Test_duration, v_peak, MAS, absVO2max, VO2max) %>%
+  mutate(BMI = Weight / (Height/100)^2,
+         Test_duration = Test_duration/60) %>%
     tbl_summary(
     type = ~ "continuous",
     statistic = all_continuous() ~ "{mean} \u00B1 {sd} [{min} - {max}]",
     missing_text = "missing",
     digits = list(
-      c(Age, Height, Weight, ATT_left, ATT_right, v_peak, MAS, VO2max, BMI) ~ 1,
+      c(Age, Height, Weight, ATT_left, ATT_right, Test_duration, v_peak, MAS, VO2max, BMI) ~ 1,
       c(absVO2max) ~ 0
     )
   ) %>%
@@ -900,14 +1485,14 @@ Tbl1 <- Study_data %>%
 # html
 gtsave(Tbl1, "output/results/Tbl1.html")
 
-# html
+# png
 gtsave(Tbl1, "output/results/Tbl1.png")
 
 # latex
 gtsave(Tbl1, "output/results/Tbl1.tex")
 
-# word
-gtsave(Tbl1, "output/results/Tbl1.docx")
+# word # commented out as it throws an error (but works)
+# gtsave(Tbl1, "output/results/Tbl1.docx")
 ```
 
 ## Session Info
